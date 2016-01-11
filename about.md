@@ -4,4 +4,4 @@ title: About
 permalink: /about/
 ---
 
-I am a graduate stundet at RIT studying Imaging Science.
+I am a graduate stundent at RIT studying Imaging Science.
