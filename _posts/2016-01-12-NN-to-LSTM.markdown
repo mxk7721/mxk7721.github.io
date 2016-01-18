@@ -1,0 +1,160 @@
+---
+layout: post
+title:  "From feed-forward Neural Networks to LSTM RNN."
+date:   2016-01-12 00:04:46 +0100
+categories: neural network lstm
+---
+
+Often, while trying to learn about a new topic I scribble down several pages of notes. Later I most likely throw them out when I have too much clutter around me. However, I often end up regretting it and wishing I had kept the notes. Thus this is my first attempt at collecting and cleaning up some of the notes I made while trying to understand the Long short-term memory (LSTM) Recurrent Neural Networks (RNNs). I am publishing these notes here with the hope that somebody else might find some value in them. 
+
+As I was trying to learn about Neural Networks (NNs) I was very lucky to early on come across the blogs of [Andrej Karpathy](http://karpathy.github.io) and [Chris Colah](http://colah.github.io), and the notes for [CS231N](http://cs231n.github.io "CS231N") (a course about NNs cotaught by Andrej Karpathy at Stanford University). All of the previously mentioned resources are excellent places to start, if one wishes to understand some of the basics behind the theory of NNs, backpropagation and various other topics.
+
+In these notes, it is assumed the reader has a general idea of how both NNs and RNNs work, and has had some experience with backpropagation in the case of a fully-connected (FC) NN. However, if this is not the case, I would refer anyone to the following resources to understand the various topics:
+
+* [Deep Learning Tutorial](http://www.toptal.com/machine-learning/an-introduction-to-deep-learning-from-perceptrons-to-deep-networks) at toptal.com 
+* [CS231N](http://cs231n.github.io "CS231N") for notes about backpropagation and FC NN
+* [RNN Tutorial](http://www.wildml.com/2015/09/recurrent-neural-networks-tutorial-part-1-introduction-to-rnns/) on the Wild ML blog.
+* [Introduction to LSTM](http://colah.github.io/posts/2015-08-Understanding-LSTMs/) by Chris Colah
+
+As the reader goes through this blog, I think it would be of immense value for them to look at Andrej Karpathy's [Python implementation](https://gist.github.com/karpathy/587454dc0146a6ae21fc) of the batched LSTM cell in parallel.
+
+First we will start out by looking at backpropagation equations for the FC NN and then continue onto the LSTM RNN. 
+
+## Fully-connected Neural Network ##
+
+#### Forward propagation
+In the case of a FC NN, we are going to analyze backpropagation between two layers and use the following notation:
+
+* input layer (newtork input or output of a hidden layer), denoted by $$\mathbf{X}$$
+* output layer (output of the network or a hidden layer), denoted by $$\mathbf{H}$$
+* weight matrix, denoted by $$\mathbf{W}$$
+
+Neuron activations for a single input $$\mathbf{x}$$ (itself a $$1 \times m$$ row vector) are given by:
+
+$$ H = f( \mathbf{x}\mathbf{W} + \mathbf{b}).$$
+
+While processing a batch of n examples (stacked as an $$n \times m$$ matrix), in order to conveniently express the operation as a single matrix multiplication followed by element-wise application of the nonlinearity (e.g. sigmoid function, also called the activation function) as:
+
+$$ \mathbf{H} = f( \mathbf{X}\mathbf{W}),$$
+
+we append a vector of ones to the input matrix $$ \mathbf{X}$$ and absorb the biases into the first row of the weight matrix $$\mathbf{W}$$. For additional notational convenience, let $$\mathbf{h} = \mathbf{X}\mathbf{W}$$ represent the neuron outputs just before the application of the activation function (similar notation will be present in the LSTM section, where the lowercase letter for a NN layer will denote the neuron outputs before the activation function).
+
+As mentioned, $$f(\cdot)$$ in this case is the neuron activation function applied in an element-wise fashion to each element of the matrix $$\mathbf{h}$$. The output $$\mathbf{H}$$ is the either another hidden layer, or serves at the output layer which will be further fed into a loss function to determine how well we did. In the case of the batch processing, the loss function $$ J(\theta)$$ often takes the following form:
+
+$$ J(\theta) = \frac{1}{n} \sum_{i = 1}^n J_i(\theta)$$
+
+The exact form $$J_i(\theta)$$ takes depends on the task we aim to accomplish.
+
+#### Backpropagation
+
+In order to compute the gradient of the loss function with respect to the the weight matrix $$\mathbf{W}$$ and the input matrix $$\mathbf{X}$$, we will assume that we already have the matrix of derivatives with respect to neuron outputs just before the activations:
+
+$$ \partial \mathbf{h} = \begin{bmatrix} \frac{\partial J}{\partial h_{i,j}} \end{bmatrix}$$
+
+To derive the expression for the gradient $$ \partial \mathbf{W}$$ of $$ J( \theta )$$ with respect to the weight matrix, note that the loss function is a function of $$W_{i,j}$$ in the following way:
+
+$$ J(\cdot) = J(h_{1,j}(W_{i,j}), \dots, h_{n,j}(W_{i,j})) .$$
+
+Using the multivariable [chain rule](https://en.wikipedia.org/wiki/Chain_rule), we have that
+
+\\[\begin{aligned}
+\frac{\partial J}{\partial W\_{i,j}} & = \frac{\partial J}{\partial h\_{1,j}} \frac{\partial h\_{1,j}}{\partial W\_{i,j}} + \dots + \frac{\partial J}{\partial h\_{n,j}} \frac{\partial h\_{n,j}}{\partial W\_{i,j}} \\\
+ & = \frac{\partial J}{\partial h\_{1,j}} x\_{1,i} + \dots + \frac{\partial J}{\partial h\_{n,j}} x\_{n,i} \\\
+ & = (\mathbf{X}\_{:,i})^T \cdot \partial \mathbf{h}\_{:,j}
+\end{aligned} \\]
+
+Therefore, we see that we can compute the gradient $$\partial \mathbf{W} $$ as:
+
+$$ \partial \mathbf{W} = \mathbf{X}^T \cdot \partial \mathbf{h}.$$
+
+To derive the expression for $$ \partial \mathbf{X} $$, which would allow us to propagate the derivative up to the earlier layers,  we note that:
+
+$$ J(\cdot) = J(h_{i,1} (x_{i,j}), \dots, h_{i,k} (x_{i,j})) $$
+
+and thus
+
+\\[\begin{aligned}
+\frac{\partial J}{\partial x\_{i,j}} & = \frac{\partial J}{\partial h\_{i,1}} \frac{\partial h\_{i,1}}{\partial x\_{i,j}} + \dots + \frac{\partial J}{\partial h\_{i,k}} \frac{\partial h\_{i,1}}{\partial x\_{i,j}} \\\
+ & = \frac{\partial J}{\partial h\_{1,j}} W\_{j,1} + \dots + \frac{\partial J}{\partial h\_{n,j}} W\_{j,k} \\\
+ & = \partial \mathbf{h}_{i,:} \cdot (\mathbf{W}\_{j,:})^T
+\end{aligned} \\]
+
+giving us
+
+$$ \partial \mathbf{X} = \partial \mathbf{h} \cdot \mathbf{W}^T.$$
+
+## LSTM Recurrent Neural Network ##
+
+#### Forward pass of the LSTM
+
+Although the RNN might seem intimidating at first , once we "unroll" it,  it will end up being a little more complicated form of a the FC NN (sort of). Below we see the diagram of the LSTM cell at time $$t$$.
+
+<img src="/images/lstm.png">
+<center>Diagram of the LSTM cell. [Source: colah.github.io]</center>
+
+Chris Colah's [Introduction to LSTM](http://colah.github.io/posts/2015-08-Understanding-LSTMs/) does an excellent job at describing the forward pass through the cell. In order to go through the forward propagation of one time step, we will need the weights $$\mathbf{W}_F, \mathbf{W}_I, \mathbf{W}_G, \mathbf{W}_O$$ and the inputs $$\mathbf{c}_{t-1}, \mathbf{h}_{t-1}$$, and $$\mathbf{x}_t$$. We combine a column vector of ones,  $$\mathbf{h}_{t-1}$$ and $$\mathbf{x}_t$$ into a single input matrix $$\mathbf{X}$$. Then a single pass through LSTM is summarized by the following equations (replacing $$\mathbf{\tilde{C}}_t \text{ by } \mathbf{G}_t $$):
+
+\\[\begin{aligned}
+ \mathbf{F}\_t & = \sigma (\mathbf{X} \cdot \mathbf{W}\_F)\\\
+ \mathbf{I}\_t & = \sigma (\mathbf{X} \cdot \mathbf{W}\_I)\\\
+ \mathbf{G}\_t & = \tanh (\mathbf{X} \cdot \mathbf{W}\_G)\\\
+ \mathbf{O}\_t & = \sigma (\mathbf{X} \cdot \mathbf{W}\_O)\\\
+ \mathbf{C}\_t & = \mathbf{C}\_{t-1} * \mathbf{F}\_t + \mathbf{I}\_t * \mathbf{G}\_t \\\
+ \mathbf{h}\_t & = \mathbf{O}\_t * \tanh(\mathbf{C}\_t)
+\end{aligned} \\]
+
+
+
+$$\mathbf{C}_t \text{ and } \mathbf{h}^{time}_t = \mathbf{h}_t$$ are then passed  as inputs into the next time step and $$ \mathbf{h}_t^{out} = \mathbf{h}_t$$ is potentially used to compute additional output. I make the notational difference of $$\mathbf{h}^{time}_t$$ and $$ \mathbf{h}^{out}_t $$, although they equal the same value, to distinguish the two sources of error that make up the total gradient $$\partial \mathbf{h}_{t}$$.
+
+#### Backpropagation throught the LSTM.
+
+Note that the outputs $$\mathbf{F}_t, \mathbf{I}_t, \mathbf{G}_t, \mathbf{O}_t$$ are the outputs of fully connected NN layers. These outputs are then element-wise transformed to yield $$ \mathbf{C}_t $$ and $$ \mathbf{h}_t $$. Thus, backpropagation of derivatives mostly consists of backpropagating the derivatives using the chain rule up to the neuron outputs of the FC NN layers. Then we will use the formulas we arrived at earlier for backpropagating the errors through the FC NN layers. 
+
+Before start looking at the equations for backpropagation, we need the following formulas:
+\\[\begin{aligned}
+ y = \sigma(x) = \frac{1}{1+e^{-x}} & \text{ then } \frac{dy}{dx} = y (1 - y) \\\
+ y = tanh(x) & \text{ then } \frac{dy}{dx} = 1 - y^2
+\end{aligned} \\]
+
+and we assume that we have the following gradients : $$ \partial \mathbf{h}_{t}^{time} ,\partial \mathbf{C}_{t} ,\partial \mathbf{h}_{t}^{out} $$.
+
+
+We start out by combining $$\partial \mathbf{h}_{t}^{time}$$ and $$\partial \mathbf{h}_{t}^{out}$$ into $$\partial \mathbf{h}_{t}$$, the total gradient of $$J(\cdot)$$ with respect to each $$ h_t^{i,j} $$. The equations for the backpropagation  are detailed in the diagram below. We start out at the root node with $$\partial \mathbf{h}_{t}$$ and follow down through the tree to backpropagate the derivatives towards the previous time step.
+
+<img src="/images/backprop.png">
+
+
+To demonstrate how one might go about deriving the equations, we will show how to obtain the gradient $$ \partial \mathbf{W}_O$$ with respect to the weights $$ \mathbf{W}_O$$. Since 
+
+\\[\begin{aligned}
+& J(h\_t^{i,j}(O\_t^{i,j}(o\_t^{i,j}))) \\\
+& O\_t^{i,j} = \sigma(o\_t^{i,j})\\\
+& h\_t^{i,j} = O\_t^{i,j} \tanh(C\_t^{i,j})
+\end{aligned} \\] 
+
+
+using the chain rule, we have that:
+
+\\[\begin{aligned}
+ \frac{\partial J}{\partial o\_t^{i,j}} & =  \frac{\partial J}{\partial h\_t^{i,j}}  \frac{h\_t^{i,j}}{\partial O\_t^{i,j}}  \frac{\partial O\_t^{i,j}}{\partial o\_t^{i,j}} \\\
+ & = \frac{\partial J}{\partial h\_t^{i,j}} \tanh(C\_t^{i,j}) O\_t^{i,j} (1- O\_t^{i,j}).
+\end{aligned} \\] 
+
+In the end, we have:
+
+$$\partial \mathbf{W}_O^t =  \mathbf{X}^T \cdot \partial \mathbf{o}_t .$$
+
+Final step is to compute $$ \partial \mathbf{X} $$:
+
+$$ \partial \mathbf{X} = \partial \mathbf{g}_t \cdot \mathbf{W}^T_G + \partial \mathbf{i}_t \cdot \mathbf{W}^T_I + \partial \mathbf{f}_t \cdot \mathbf{W}^T_F + \partial \mathbf{o}_t \cdot \mathbf{W}^T_O,$$
+
+giving us $$\partial \mathbf{x}_t \text{ and } \partial \mathbf{h}_{t-1} $$. Finally, once we have backpropagated the errors through all of the time steps, we should not forget to add up the gradients with respect to weights for all of the time steps:
+
+$$\partial \mathbf{W} = \sum_{t=1}^n \partial \mathbf{W}^t.$$
+
+#### Conclusion
+
+I hope walking through these equations will make the LSTM backpropagation easier to understand. As an exerise, one might want to do a similar derivation for the GRU RNN (please see [Introduction to LSTM](http://colah.github.io/posts/2015-08-Understanding-LSTMs/) for equations describing propagation through GRU).
+
+For any comments / corrections / feedback, please contact me at mxk7721@rit.edu.
